@@ -1,6 +1,7 @@
 from typing import Any
 from flask import Flask, jsonify
 from random import choice
+from flask import request
 
 
 app = Flask(__name__)
@@ -62,8 +63,10 @@ def param_example(value: str):
 # /quotes/2
 # /quotes/3
 # /quotes/4
+# /quotes/5
 # ....
 # /quotes/n
+
 @app.route("/quotes/<int:quote_id>")
 def get_quote(quote_id: int) -> dict:
    """ Функция возвращает цитату по значению ключа id=quote_id."""
@@ -83,6 +86,17 @@ def quotes_count():
 def random_quote() -> dict:
    """Function for task4 of Practice part1."""
    return jsonify(choice(quotes))
+
+
+
+@app.route("/quotes", methods=["POST"])
+def add_quote():
+    quote = request.json
+    quote["id"] = quotes[-1]["id"] + 1
+    quotes.append(quote)
+    return quote, 201
+
+
 
 
 if __name__ == "__main__":
