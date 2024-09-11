@@ -97,6 +97,13 @@ def add_quote():
     return quote, 201
 
 
+@app.route("/quotes/<int:quote_id>", methods=["DELETE"])
+def delete_quote(quote_id: int):
+   for quote in quotes:
+      if quote["id"] == quote_id:
+            quotes.remove(quote)
+            return jsonify({"messege": f"Quote with id={quote_id} hase deleted"}), 200 
+   return {"error": f"Quote with id={quote_id} not found"}, 404
 
 
 if __name__ == "__main__":
