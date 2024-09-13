@@ -5,15 +5,56 @@ from http import HTTPStatus
 from pathlib import Path
 import sqlite3
 from werkzeug.exceptions import HTTPException
+# import from SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 
 BASE_DIR = Path(__file__).parent
-path_to_db = BASE_DIR / "test.db" # <- тут путь к БД
+path_to_db = BASE_DIR / "quotes.db" # <- тут путь к БД
 
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'main.db'}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+
+db = SQLAlchemy(model_class=Base)
+db.init_app(app)
+
+
+class QuoteModel(db.Model):
+    __tablename__ = 'quotes'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped[str] = mapped_column(String(32), unique=False, index=True)
+    text: Mapped[str] = mapped_column(String(255))
+    rating: Mapped[int] 
+
+    def __init__(self, author, text, rating):
+        self.author = author
+        self.text = text
+        self.rating = rating
+
+    def to_dict(self):
+        return{
+            "id": self.id,
+            "author": self.author,
+            "text": self.text,
+            "rating": self.rating
+        }
+
+
+
+
 
 about_me = {
    "name": "Мурат",
@@ -22,17 +63,17 @@ about_me = {
 }
 
 
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(path_to_db)
-    return db
+# def get_db():
+#     db = getattr(g, '_database', None)
+#     if db is None:
+#         db = g._database = sqlite3.connect(path_to_db)
+#     return db
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+# @app.teardown_appcontext
+# def close_connection(exception):
+#     db = getattr(g, '_database', None)
+#     if db is not None:
+#         db.close()
 
 
 @app.errorhandler(HTTPException)
@@ -42,21 +83,21 @@ def handle_exeption(e):
 
 
 
-def new_table(name_db: str):
-    create_table = """
-    CREATE TABLE IF NOT EXISTS quotes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    author TEXT NOT NULL,
-    text TEXT NOT NULL,
-    rating INTEGER NOT NULL
-    );
-    """
-    connection = sqlite3.connect(name_db)
-    cursor = connection.cursor()
-    cursor.execute(create_table)
-    connection.commit()
-    cursor.close()
-    connection.close()
+# def new_table(name_db: str):
+#     create_table = """
+#     CREATE TABLE IF NOT EXISTS quotes (
+#     id INTEGER PRIMARY KEY AUTOINCREMENT,
+#     author TEXT NOT NULL,
+#     text TEXT NOT NULL,
+#     rating INTEGER NOT NULL
+#     );
+#     """
+#     connection = sqlite3.connect(name_db)
+#     cursor = connection.cursor()
+#     cursor.execute(create_table)
+#     connection.commit()
+#     cursor.close()
+#     connection.close()
 
 
 
@@ -261,5 +302,5 @@ def delete_quote(quote_id: int):
 
 
 if __name__ == "__main__":
-   new_table('quotes.db')
+#   new_table('quotes.db')
    app.run(debug=True)
