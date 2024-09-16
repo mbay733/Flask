@@ -1,79 +1,53 @@
 from typing import Any
 from flask import Flask, jsonify, request, g, abort
-from random import choice
 from http import HTTPStatus
 from pathlib import Path
-import sqlite3
 from werkzeug.exceptions import HTTPException
-# import from SQLAlchemy
+# imports for sqlalchemy
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, func, ForeignKey
+from sqlalchemy.exc import InvalidRequestError
+from flask_migrate import Migrate
 
 
 class Base(DeclarativeBase):
     pass
 
 
-
 BASE_DIR = Path(__file__).parent
-path_to_db = BASE_DIR / "quotes.db" # <- тут путь к БД
-
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'main.db'}"
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'quotes.db'}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
+migrate = Migrate(app, db)
 
+
+
+class AuthorModel(db.Model):
+    __tablename__ = 'authors'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[int] = mapped_column(String(32), index= True, unique=True)
+    quotes: Mapped[list['QuoteModel']] = relationship( back_populates='author', lazy='dynamic')
+
+    def __init__(self, name):
+        self.name = name
 
 class QuoteModel(db.Model):
     __tablename__ = 'quotes'
-
     id: Mapped[int] = mapped_column(primary_key=True)
-    author: Mapped[str] = mapped_column(String(32), unique=False, index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey('authors.id'))
+    author: Mapped['AuthorModel'] = relationship(back_populates='quotes')
     text: Mapped[str] = mapped_column(String(255))
-    rating: Mapped[int] 
-
-    def __init__(self, author, text, rating):
+    
+    def __init__(self, author, text):
         self.author = author
         self.text = text
-        self.rating = rating
 
-    def to_dict(self):
-        return{
-            "id": self.id,
-            "author": self.author,
-            "text": self.text,
-            "rating": self.rating
-        }
-
-
-
-
-
-about_me = {
-   "name": "Мурат",
-   "surname": "Байрамуков",
-   "email": "Bay733@mail.ru"
-}
-
-
-# def get_db():
-#     db = getattr(g, '_database', None)
-#     if db is None:
-#         db = g._database = sqlite3.connect(path_to_db)
-#     return db
-
-# @app.teardown_appcontext
-# def close_connection(exception):
-#     db = getattr(g, '_database', None)
-#     if db is not None:
-#         db.close()
 
 
 @app.errorhandler(HTTPException)
@@ -83,224 +57,106 @@ def handle_exeption(e):
 
 
 
-# def new_table(name_db: str):
-#     create_table = """
-#     CREATE TABLE IF NOT EXISTS quotes (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     author TEXT NOT NULL,
-#     text TEXT NOT NULL,
-#     rating INTEGER NOT NULL
-#     );
-#     """
-#     connection = sqlite3.connect(name_db)
-#     cursor = connection.cursor()
-#     cursor.execute(create_table)
-#     connection.commit()
-#     cursor.close()
-#     connection.close()
-
-
-
-
-# quotes = [
-#    {
-#        "id": 3,
-#        "author": "Rick Cook",
-#        "text": "Программирование сегодня — это гонка разработчиков программ, стремящихся писать программы с большей и лучшей идиотоустойчивостью, и вселенной, которая пытается создать больше отборных идиотов. Пока вселенная побеждает."
-#    },
-#    {
-#        "id": 5,
-#        "author": "Waldi Ravens",
-#        "text": "Программирование на С похоже на быстрые танцы на только что отполированном полу людей с острыми бритвами в руках."
-#    },
-#    {
-#        "id": 6,
-#        "author": "Mosher’s Law of Software Engineering",
-#        "text": "Не волнуйтесь, если что-то не работает. Если бы всё работало, вас бы уволили."
-#    },
-#    {
-#        "id": 8,
-#        "author": "Yoggi Berra",
-#        "text": "В теории, теория и практика неразделимы. На практике это не так."
-#    },
-
-# ]
-
-
 # URL: /quotes
 @app.route("/quotes")
 def get_quotes() -> list[dict[str, Any]]:
     """ Функция неявно преобразовывает список словарей в JSON."""
-    select_quotes = "SELECT * FROM quotes"
-    cursor = get_db().cursor()
-    cursor.execute(select_quotes)
-    quotes_db = cursor.fetchall() # get list[tuple]
-    # Подготовка данных для отправки в правильном формате
-    # Необходимо выполнить преобразование:
-    # list[tuple] -> list[dict]
-    keys = ("id", "author", "text", "rating")
+    quotes_db = db.session.scalars(db.select(QuoteModel)).all()
     quotes = []
-    for quote_db in quotes_db:
-        quote = dict(zip(keys, quote_db))
-        quotes.append(quote)
+    for quote in quotes_db:
+        quotes.append(quote.to_dict())
     return jsonify(quotes), 200
 
 
-# @app.route("/")  # Это первый URL, который мы будет обрабатывать
-# def hello_world():  # Эта функция-обработчик будет вызвана при запросе этого урла.
-#     return jsonify(hello="Hello, World!"), 200
-
-
-# @app.route("/about")  # Это статический URL
-# def about():
-#    return jsonify(about_me), 200
-
-
-
-@app.route("/params/<value>")  # Это пример динамического URL'а
-def param_example(value: str):
-    return jsonify(param=value)
-
-# /quotes/1
-# /quotes/2
-# /quotes/3
-# /quotes/4
-# /quotes/5
-# ....
-# /quotes/n
-
 @app.route("/quotes/<int:quote_id>")
 def get_quote(quote_id: int) -> dict:
-   """ Функция возвращает цитату по значению ключа id=quote_id."""
-   select_quotes = "SELECT * FROM quotes WHERE id = ?"
-   cursor = get_db().cursor()
-   cursor.execute(select_quotes, (quote_id,))
-   quote_db = cursor.fetchone()
-   if quote_db:
-      keys = ("id", "author", "text", "rating")
-      quote = dict(zip(keys, quote_db))
-      return jsonify(quote), 200 
-   return {"error": f"Quote with id={quote_id} not found"}, 404               
+    """ Функция возвращает цитату по значению ключа id=quote_id."""
+    quote = db.get_or_404(quote_id)
+    return jsonify(quote.to_dict()), HTTPStatus.OK
 
 
 @app.get("/quotes/count")
 def quotes_count():
-   """Function for task3 of Practice part1."""
-   select_count = "SELECT count(*) ass count FROM quotes"
-   cursor = get_db().cursor()
-   cursor.execute(select_count)
-   count = cursor.fetchone()
-   if count:
-      return jsonify(count=count[0]), 200
-   abort(503) #вернем ошбку сервис недоступен
-
-
-   
-
-
-# @app.route("/quotes/random", methods=["GET"])
-# def random_quote() -> dict:
-#    """Function for task4 of Practice part1."""
-#    return jsonify(choice(quotes))
-
-
-
-# @app.route("/quotes", methods=["POST"])
-# def add_quote():
-#     quote = request.json
-#     quote["id"] = quotes[-1]["id"] + 1
-#     quotes.append(quote)
-#     return quote, 201
-
+    """Function to count all quotes."""
+    count = db.session.scalar(func.count(QuoteModel.id))
+    return jsonify(count=count), 200
 
 
 
 @app.route("/quotes", methods=['POST'])
 def create_quote():
-    new_quote = request.json
-    insert_quote = "INSERT INTO quotes (author, text, rating) VALUES (?, ?, ?)"
-    connection = get_db()
-    cursor = connection.cursor()
-    cursor.execute(insert_quote, (new_quote['author'], new_quote['text'], new_quote['rating']))
-    answer = cursor.lastrowid  # Получаем из БД id новой цитаты
-    connection.commit()
-    new_quote['id'] = answer
-    return jsonify(new_quote), 201
+    data = request.json
 
+    if "rating" not in data or not data["rating"] in range(1, 6):
+        data["rating"] = 1
 
+    try:
+        quote = QuoteModel(**data)
+        db.session.add(quote)
+        db.session.commit()
+    except Exception as e:
+        abort(503, f"error: {e.description}")
+    except TypeError:
+        return (
+            (
+                "Invalid data. Required: author, text, rating (optional). "
+                f"Received: {", ".join(data.keys())}"
+            ),
+            HTTPStatus.BAD_REQUEST,
+        )
 
+    return quote.to_dict(), HTTPStatus.CREATED
 
 
 @app.route("/quotes/<int:quote_id>", methods=["PUT"])
 def edit_quote(quote_id):
-    new_data = request.json
-    attributes: set = set(new_data.keys()) & {'author', 'rating', 'text'}
+    quote: QuoteModel = db.get_or_404(quote_id)
 
-    if "rating" in attributes and new_data["rating"] not in range(1, 6):
-        # Валидируем новое значени рейтинга и случае успеха обновляем данные
-        attributes.remove("rating")
-    if attributes:
-        update_quotes = f"UPDATE quotes SET {', '.join(attr + '=?' for attr in attributes)} WHERE id=?"
-        params = tuple(new_data.get(attr) for attr in attributes) + (quote_id,)
-        connection = get_db()
-        cursor = connection.cursor()
-        cursor.execute(update_quotes, params)
-        rows = cursor.rowcount  
-        if rows:
-            connection.commit()
-            cursor.close()
-            responce, status_code = get_quote(quote_id)
-            if status_code == 200:
-                return responce, HTTPStatus.OK
-        connection.rollback()
-    else:
-        responce, status_code = get_quote(quote_id)
-        if status_code == 200:
-            return responce, HTTPStatus.OK
-    abort(404, f"Quote with id={quote_id} not found.")
+    data: dict = request.json
+    if "rating" in data and not data["rating"] in range(1, 6):
+        data.pop("rating")
+    if len(data) == 0:
+        return "No valid data to update", HTTPStatus.BAD_REQUEST
 
-
-
-
-
-# @app.route("/quotes/filter")
-# def filter_quotes():
-#    filtered_quotes = quotes.copy()
-#    for key, value in request.args.items():
-#       if key not in ("author", "rating"):
-#          return f"Invalid key {key}", HTTPStatus.BAD_REQUEST
-#       if key == "rating":
-#          value = int(value)
-#       filtered_quotes = [quote for quote in filtered_quotes if quote.get(key) == value]
-#       # ======== the same as 136 ==========
-#       # res_quotes = []
-#       # for quote in filtered_quotes:
-#       #    if quote[key] == value:
-#       #       res_quotes.append(quote)
-#       # filtered_quotes = res_quotes.copy() # Делаю независимую копию списка
-#       # ===================================
-#    return filtered_quotes
-
-
-
+    try:
+        for key, value in data.items():
+            if not hasattr(quote, key):
+                raise Exception(f"Invalid key: {key}. Valid: author, text, rating")
+            setattr(quote, key, value)
+        db.session.commit()
+        return quote.to_dict()
+    except Exception as e:
+        return str(e), HTTPStatus.BAD_REQUEST
 
 
 @app.route("/quotes/<int:quote_id>", methods=["DELETE"])
 def delete_quote(quote_id: int):
-    delete_sql = f"DELETE FROM quotes WHERE id = ?"
-    params = (quote_id,)
-    connection = get_db()
-    cursor = connection.cursor()
-    cursor.execute(delete_sql, params)  
-    rows = cursor.rowcount  # Кол-во измененных строк
-    if rows:
-        connection.commit()
-        cursor.close()         
-        return jsonify({"message": f"Quote with id {quote_id} has deleted."}), 200
-    connection.rollback()
-    abort(404, f"Quote with id={quote_id} not found")
+    quote = db.get_or_404(quote_id)
+    db.session.delete(quote)
+    try:
+        db.session.commit()
+        return f"Quote with id {id} deleted"
+    except Exception as e:
+        db.session.rollback()
+        abort(503, f"Database error: {e.description}")
+
+
+@app.route("/quotes/filter")
+def filter_quotes():
+    """DONE: change to work with database."""
+    try:
+        quotes = db.session.scalars(QuoteModel).filter_by(**request.args).all()
+    except InvalidRequestError:
+        return (
+            (
+                "Invalid data. Possible keys: author, text, rating. "
+                f"Received: {", ".join(request.args.keys())}"
+            ),
+            HTTPStatus.BAD_REQUEST,
+        )
+
+    return jsonify([quote.to_dict() for quote in quotes]), 200
 
 
 if __name__ == "__main__":
-#   new_table('quotes.db')
-   app.run(debug=True)
+   app.run(debug=True, port=5000)
