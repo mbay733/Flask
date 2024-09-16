@@ -32,21 +32,37 @@ class AuthorModel(db.Model):
     __tablename__ = 'authors'
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[int] = mapped_column(String(32), index= True, unique=True)
-    quotes: Mapped[list['QuoteModel']] = relationship( back_populates='author', lazy='dynamic')
+    quotes: Mapped[list['QuoteModel']] = relationship(back_populates='author', lazy='dynamic')
 
     def __init__(self, name):
         self.name = name
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name
+            }
+
+
+
 class QuoteModel(db.Model):
     __tablename__ = 'quotes'
+
     id: Mapped[int] = mapped_column(primary_key=True)
     author_id: Mapped[str] = mapped_column(ForeignKey('authors.id'))
     author: Mapped['AuthorModel'] = relationship(back_populates='quotes')
     text: Mapped[str] = mapped_column(String(255))
-    
+
     def __init__(self, author, text):
         self.author = author
-        self.text = text
+        self.text  = text
+
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "text": self.text
+        }
 
 
 
@@ -66,6 +82,21 @@ def get_quotes() -> list[dict[str, Any]]:
     for quote in quotes_db:
         quotes.append(quote.to_dict())
     return jsonify(quotes), 200
+
+
+
+# URL: /authors/1/quotes
+@app.route("/authors/<int:author_id>/quotes")
+def get_author_quotes(author_id):
+    """ Функция неявно преобразовывает список словарей в JSON."""
+    author = db.session.get(AuthorModel, author_id)
+    quotes = []
+    for quote in author.quotes:
+        quotes.append(quote.to_dict())
+    
+    return jsonify(author=author.to_dict(), quotes=quotes), 200
+
+
 
 
 @app.route("/quotes/<int:quote_id>")
